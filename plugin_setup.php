@@ -162,88 +162,97 @@ function SaveHAConfig() {
 }
 
 function LoadConfig() {
-    $.get('/api/configfile/plugin.fpp-HomeAssistant.json', function(data) {
-        config = data;
-       
-        // Overlay Models
-        $.get('/api/models', function(fppModels) {
-            overlayModels = fppModels;
-            $('#modelsBody').empty();
+    $.ajax({
+        url: '/api/configfile/plugin.fpp-HomeAssistant.json',
+        async: false,
+        success: function(data) {
+            config = data;
+        }
+    });
 
-            for (var i = 0; i < fppModels.length; i++) {
-                var row = "<tr><th><input type='checkbox' class='modelEnabled'";
-
-                if ((config.hasOwnProperty('models')) &&
-                    (config['models'].hasOwnProperty(fppModels[i].Name)) &&
-                    (config['models'][fppModels[i].Name].Enabled))
-                    row += ' checked';
-
-                row += "></th>" +
-                    "<td class='modelName'>" + fppModels[i].Name + "</td>";
-
-                row += "<td><input class='lightName' size='32' maxlength='32' value='";
-                if ((config.hasOwnProperty('models')) &&
-                    (config['models'].hasOwnProperty(fppModels[i].Name)))
-                    row += config['models'][fppModels[i].Name].LightName;
-                else
-                    row += fppModels[i].Name;
-
-                row += "' /></td>";
-
-                row += "</tr>";
-
-                $('#modelsBody').append(row);
-            }
-        });
-
-        // GPIO Input Config file
-        $.get('/api/configfile/gpio.json', function(data) {
+    // GPIO Input Config file
+    $.ajax({
+        url: '/api/configfile/gpio.json',
+        async: false,
+        success: function(data) {
             gpioInputConfig = data;
-        });
-
-        // GPIO Inputs
-        $.get('/api/gpio', function(fppGPIOs) {
-            gpios = fppGPIOs;
-            $('#gpiosBody').empty();
-
-            for (var i = 0; i < fppGPIOs.length; i++) {
-                var row = "<tr><th><input type='checkbox' class='pinEnabled'";
-
-                if ((config.hasOwnProperty('gpios')) &&
-                    (config['gpios'].hasOwnProperty(fppGPIOs[i].pin)) &&
-                    (config['gpios'][fppGPIOs[i].pin].Enabled))
-                    row += ' checked';
-
-                row += "></th>" +
-                    "<td class='pinNumber'>" + fppGPIOs[i].pin + "</td>";
-
-                if ((config.hasOwnProperty('gpios')) &&
-                    (config['gpios'].hasOwnProperty(fppGPIOs[i].pin)))
-                    row += GetComponentSelect(config['gpios'][fppGPIOs[i].pin].Component);
-                else
-                    row += GetComponentSelect('');
+        }
+    });
 
 
-                row += "<td><input class='deviceName' size='32' maxlength='32' value='";
-                if ((config.hasOwnProperty('gpios')) &&
-                    (config['gpios'].hasOwnProperty(fppGPIOs[i].pin)))
-                    row += config['gpios'][fppGPIOs[i].pin].DeviceName;
-                else
-                    row += fppGPIOs[i].pin;
+    // Overlay Models
+    $.get('/api/models', function(fppModels) {
+        overlayModels = fppModels;
+        $('#modelsBody').empty();
 
-                row += "' /></td>";
+        for (var i = 0; i < fppModels.length; i++) {
+            var row = "<tr><th><input type='checkbox' class='modelEnabled'";
 
-                if ((config.hasOwnProperty('gpios')) &&
-                    (config['gpios'].hasOwnProperty(fppGPIOs[i].pin)))
-                    row += GetDeviceClassSelect(config['gpios'][fppGPIOs[i].pin].DeviceClass, config['gpios'][fppGPIOs[i].pin].Component);
-                else
-                    row += GetDeviceClassSelect('', 'binary_sensor');
+            if ((config.hasOwnProperty('models')) &&
+                (config['models'].hasOwnProperty(fppModels[i].Name)) &&
+                (config['models'][fppModels[i].Name].Enabled))
+                row += ' checked';
 
-                row += "</tr>";
+            row += "></th>" +
+                "<td class='modelName'>" + fppModels[i].Name + "</td>";
 
-                $('#gpiosBody').append(row);
-            }
-        });
+            row += "<td><input class='lightName' size='32' maxlength='32' value='";
+            if ((config.hasOwnProperty('models')) &&
+                (config['models'].hasOwnProperty(fppModels[i].Name)))
+                row += config['models'][fppModels[i].Name].LightName;
+            else
+                row += fppModels[i].Name;
+
+            row += "' /></td>";
+
+            row += "</tr>";
+
+            $('#modelsBody').append(row);
+        }
+    });
+
+    // GPIO Inputs
+    $.get('/api/gpio', function(fppGPIOs) {
+        gpios = fppGPIOs;
+        $('#gpiosBody').empty();
+
+        for (var i = 0; i < fppGPIOs.length; i++) {
+            var row = "<tr><th><input type='checkbox' class='pinEnabled'";
+
+            if ((config.hasOwnProperty('gpios')) &&
+                (config['gpios'].hasOwnProperty(fppGPIOs[i].pin)) &&
+                (config['gpios'][fppGPIOs[i].pin].Enabled))
+                row += ' checked';
+
+            row += "></th>" +
+                "<td class='pinNumber'>" + fppGPIOs[i].pin + "</td>";
+
+            if ((config.hasOwnProperty('gpios')) &&
+                (config['gpios'].hasOwnProperty(fppGPIOs[i].pin)))
+                row += GetComponentSelect(config['gpios'][fppGPIOs[i].pin].Component);
+            else
+                row += GetComponentSelect('');
+
+
+            row += "<td><input class='deviceName' size='32' maxlength='32' value='";
+            if ((config.hasOwnProperty('gpios')) &&
+                (config['gpios'].hasOwnProperty(fppGPIOs[i].pin)))
+                row += config['gpios'][fppGPIOs[i].pin].DeviceName;
+            else
+                row += fppGPIOs[i].pin;
+
+            row += "' /></td>";
+
+            if ((config.hasOwnProperty('gpios')) &&
+                (config['gpios'].hasOwnProperty(fppGPIOs[i].pin)))
+                row += GetDeviceClassSelect(config['gpios'][fppGPIOs[i].pin].DeviceClass, config['gpios'][fppGPIOs[i].pin].Component);
+            else
+                row += GetDeviceClassSelect('', 'binary_sensor');
+
+            row += "</tr>";
+
+            $('#gpiosBody').append(row);
+        }
     });
 }
 
