@@ -293,7 +293,6 @@ private:
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
 
             cmd["command"] = "Overlay Model State";
-            args.clear();
             args.append("Disabled");
             cmd["args"] = args;
             CommandManager::INSTANCE.run(cmd);
