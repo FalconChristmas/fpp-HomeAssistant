@@ -1,18 +1,9 @@
+#include <atomic>
 #include <unistd.h>
-//#include <ifaddrs.h>
 #include <errno.h>
-//#include <sys/types.h>
-//#include <sys/socket.h>
-//#include <arpa/inet.h>
-//#include <cstring>
-//#include <fstream>
-//#include <list>
 #include <mutex>
 #include <thread>
-//#include <vector>
-//#include <sstream>
 #include <jsoncpp/json/json.h>
-//#include <cmath>
 
 #include "FPP-HomeAssistant.h"
 
@@ -22,6 +13,7 @@
 #include "settings.h"
 #include "Plugin.h"
 #include "log.h"
+#include "sensors/Sensors.h"
 #include "util/GPIOUtils.h"
 
 class FPPHomeAssistantPlugin : public FPPPlugin, public httpserver::http_resource {
@@ -91,10 +83,76 @@ public:
 
                 SendGpioConfigs();
             }
+
+            runSensorThread = false;
+            if (config.isMember("sensors")) {
+                Json::Value emptyArray(Json::arrayValue);
+                Json::Value::Members sensorNames = config["sensors"].getMemberNames();
+                sensorUpdateFrequency = config["sensorUpdateFrequency"].asInt();
+
+                sensors = emptyArray;
+
+                int  enabled = 0;
+                for (unsigned int i = 0; i < sensorNames.size(); i++) {
+                    if (config["sensors"][sensorNames[i]]["Enabled"].asInt()) {
+                        sensors[enabled] = config["sensors"][sensorNames[i]];
+
+                        std::string topic = "ha/sensor/";
+                        topic += sensors[enabled]["SensorName"].asString() + "/state";
+
+                        sensors[enabled]["Topic"] = topic;
+
+                        haSensors[sensors[enabled]["SensorName"].asString()] = sensors[enabled];
+
+                        enabled++;
+                    }
+                }
+
+                std::function<void(const std::string &, const std::string &)> sf = [this](const std::string &topic, const std::string &payload) {
+                    SensorMessageHandler(topic, payload);
+                };
+                mqtt->AddCallback("/ha/sensor/#", sf);
+
+                if (enabled) {
+                    SendSensorConfigs();
+
+                    runSensorThread = true;
+                    sensorThread = new std::thread([this]() {
+                        std::string message;
+                        unsigned int slept;
+
+                        while (runSensorThread) {
+                            Json::Value fppSensors;
+                            Sensors::INSTANCE.reportSensors(fppSensors);
+
+                            for (unsigned int i = 0; i < sensors.size(); i++) {
+                                if (sensors[i]["Enabled"].asInt()) {
+                                    for (unsigned int f = 0; f < fppSensors["sensors"].size(); f++) {
+                                        if (fppSensors["sensors"][f]["label"].asString() == sensors[i]["Label"].asString()) {
+                                            message = fppSensors["sensors"][f]["formatted"].asString();
+                                            mqtt->Publish(sensors[i]["Topic"].asString(), message);
+                                        }
+                                    }
+                                }
+                            }
+
+                            slept = 0;
+                            while ((runSensorThread) && (slept++ < sensorUpdateFrequency)) {
+                                sleep(1);
+                            }
+                        }
+                    });
+
+                }
+            }
         }
     }
 
     virtual ~FPPHomeAssistantPlugin() {
+        if (runSensorThread) {
+            runSensorThread = false;
+            sensorThread->join();
+        }
     }
 
 private:
@@ -103,9 +161,15 @@ private:
 
     Json::Value lights;
     Json::Value gpios;
+    Json::Value haSensors;
     Json::Value config;
     Json::Value cache;
     std::mutex  cacheLock;
+
+    int               sensorUpdateFrequency;
+    Json::Value       sensors;
+    std::thread      *sensorThread;
+    std::atomic_bool  runSensorThread;
 
     /////////////////////////////////////////////////////////////////////////
     // Functions supporting discovery
@@ -117,7 +181,8 @@ private:
         bool hasCmd = true;
         bool hasState = true;
 
-        if (component == "binary_sensor") {
+        if ((component == "binary_sensor") ||
+            (component == "sensor")) {
             hasCmd = false;
         }
 
@@ -241,6 +306,22 @@ private:
         }
     }
 
+    void SendSensorConfigs() {
+        LogDebug(VB_PLUGIN, "Sending Sensor Configs\n");
+
+        Json::Value::Members sensorNames = config["sensors"].getMemberNames();
+        for (unsigned int i = 0; i < sensorNames.size(); i++) {
+            Json::Value sensor = config["sensors"][sensorNames[i]];
+
+            if (!sensor["Enabled"].asInt())
+                continue;
+
+            Json::Value s;
+
+            AddHomeAssistantDiscoveryConfig("sensor", sensor["SensorName"].asString(), s);
+        }
+    }
+
     /////////////////////////////////////////////////////////////////////////
     // Functions supporting MQTT Lights
     bool ModelIsConfigured(const std::string &model) {
@@ -252,7 +333,7 @@ private:
     }
 
     virtual void LightMessageHandler(const std::string &topic, const std::string &payload) {
-        std::vector<std::string> parts = split(topic, '/'); // "/light/LightName/cmd"
+        std::vector<std::string> parts = split(topic, '/'); // "/ha/light/LightName/cmd"
 
         std::string lightName = parts[3];
         if ((parts[4] == "config") &&
@@ -360,7 +441,7 @@ private:
     }
 
     /////////////////////////////////////////////////////////////////////////
-    // Functions supporting MQTT Binary Sensors
+    // Functions supporting MQTT (Binary) Sensors
     bool BinarySensorIsConfigured(const std::string &model) {
         if ((!config.isMember("models")) ||
             (!config["models"].isMember(model)))
@@ -372,7 +453,7 @@ private:
     // Binary Sensors are 1-way, so we only need to handle removing them
     // here, not any actual commands from HA
     virtual void BinarySensorMessageHandler(const std::string &topic, const std::string &payload) {
-        std::vector<std::string> parts = split(topic, '/'); // "/binary_sensor/SensorName/cmd"
+        std::vector<std::string> parts = split(topic, '/'); // "/ha/binary_sensor/SensorName/*"
 
         std::string sensorName = parts[3];
         if ((parts[4] == "config") &&
@@ -387,6 +468,28 @@ private:
             return;
 
         LogDebug(VB_PLUGIN, "Somehow we received a binary_sensor command for sensor??? %s\n", sensorName.c_str());
+        LogExcess(VB_PLUGIN, "Payload: %s\n", payload.c_str());
+    }
+
+    // Sensors are 1-way, so we only need to handle removing them
+    // here, not any actual commands from HA
+    virtual void SensorMessageHandler(const std::string &topic, const std::string &payload) {
+        std::vector<std::string> parts = split(topic, '/'); // "/ha/sensor/SensorName/*"
+LogDebug(VB_PLUGIN, "Got a /sensor/ message: %s\n", topic.c_str());
+
+        std::string sensorName = parts[3];
+        if ((parts[4] == "config") &&
+            ((!haSensors.isMember(sensorName)) ||
+             (haSensors[sensorName]["Enabled"].asInt() == 0)) &&
+            (!payload.empty())) {
+            RemoveHomeAssistantDiscoveryConfig("sensor", sensorName);
+            return;
+        }
+
+        if (parts[4] != "cmd")
+            return;
+
+        LogDebug(VB_PLUGIN, "Somehow we received a sensor command for sensor??? %s\n", sensorName.c_str());
         LogExcess(VB_PLUGIN, "Payload: %s\n", payload.c_str());
     }
 

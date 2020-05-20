@@ -80,6 +80,31 @@ function SaveHAConfig() {
 
     config['models'] = models;
 
+    var sensors = {};
+    $('#sensorsBody > tr').each(function() {
+        var sensor = {};
+        sensor.Name = $(this).find('.fppSensorName').html();
+        sensor.Label = $(this).find('.fppSensorLabel').html();
+        sensor.SensorName = $(this).find('.sensorName').val().trim();
+        var name = sensor.Label.replace(/[^a-zA-Z0-9_]/g, '');
+
+        if (sensor.SensorName == '') {
+            sensor.SensorName = sensor.Name;
+            $(this).find('.sensorName').val(sensor.Name);
+        }
+
+        if ($(this).find('.sensorEnabled').is(':checked')) {
+            sensor.Enabled = 1;
+        } else {
+            sensor.Enabled = 0;
+        }
+
+        sensors[name] = sensor;
+    });
+
+    config['sensors'] = sensors;
+    config['sensorUpdateFrequency'] = parseInt($('#sensorUpdateFrequency').val());
+
     var gpioInputConfigModified = false;
     var pins = {};
     $('#gpiosBody > tr').each(function() {
@@ -211,6 +236,48 @@ function LoadConfig() {
         }
     });
 
+    // Sensors (Temp/Voltage/etc.)
+    $.get('/fppjson.php?command=getFPPstatus', function(fppStatus) {
+        fppSensors = fppStatus.sensors;
+
+        $('#sensorsBody').empty();
+
+        if (config.hasOwnProperty("sensorUpdateFrequency")) {
+            $('#sensorUpdateFrequency').val(config['sensorUpdateFrequency']);
+        }
+
+        for (var i = 0; i < fppSensors.length; i++) {
+            var row = "<tr><th><input type='checkbox' class='sensorEnabled'";
+            var name = fppSensors[i].label.replace(/[^a-zA-Z0-9_]/g, '');
+
+            if ((config.hasOwnProperty('sensors')) &&
+                (config['sensors'].hasOwnProperty(name)) &&
+                (config['sensors'][name].Enabled))
+                row += ' checked';
+
+            var label = fppSensors[i].label.replace(/: $/g, '');
+            fppSensors[i].name = name;
+
+            row += "></th>" +
+                "<td class='fppSensorName'>" + label + "</td>";
+
+            row += "<td><input class='sensorName' size='32' maxlength='32' value='";
+            if ((config.hasOwnProperty('sensors')) &&
+                (config['sensors'].hasOwnProperty(name)))
+                row += config['sensors'][name].SensorName;
+            else
+                row += name;
+
+            row += "' /></td>";
+
+            row += "<td style='display: none;' class='fppSensorLabel'>" + fppSensors[i].label + "</td>";
+
+            row += "</tr>";
+
+            $('#sensorsBody').append(row);
+        }
+    });
+
     // GPIO Inputs
     $.get('/api/gpio', function(fppGPIOs) {
         gpios = fppGPIOs;
@@ -266,7 +333,7 @@ $(document).ready(function() {
 <div id="global" class="settings">
     <fieldset>
         <legend>Home Assistant MQTT Discovery</legend>
-        Discover FPP Overlay Models as RGB Lights:<br>
+        <b>Discover FPP Overlay Models as RGB Lights:</b><br>
         <div class='fppTableWrapper fppTableWrapperAsTable'>
             <div class='fppTableContents'>
                 <table id='modelsTable'>
@@ -282,7 +349,24 @@ $(document).ready(function() {
         </div>
         <br>
 
-        Discover FPP GPIOs as Binary Sensors (inputs) and Switches (outputs):<br>
+        <b>Discover FPP Sensors:</b><br>
+        <div class='fppTableWrapper fppTableWrapperAsTable'>
+            <div class='fppTableContents'>
+                <table id='sensorsTable'>
+                    <thead>
+                        <th title='Enable the FPP Sensor as a Sensor in HA'>Enable</th>
+                        <th title='FPP Sensor Name'>FPP Sensor</th>
+                        <th title='Sensor name as it appears in HA'>HA Sensor Name</th>
+                    </thead>
+                    <tbody id='sensorsBody'>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        Sensor update frequency: <input id='sensorUpdateFrequency' type='number' min='1' max='3600' value='60'> seconds<br>
+        <br>
+
+        <b>Discover FPP GPIOs as Binary Sensors (inputs) and Switches (outputs):</b><br>
         <div class='fppTableWrapper fppTableWrapperAsTable'>
             <div class='fppTableContents'>
                 <table id='gpiosTable'>
