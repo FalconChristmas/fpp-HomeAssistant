@@ -18,7 +18,7 @@
 
 class FPPHomeAssistantPlugin : public FPPPlugin, public httpserver::http_resource {
 public:
-    FPPHomeAssistantPlugin() : FPPPlugin("fpp-HomeAssistant") {
+    FPPHomeAssistantPlugin() : FPPPlugin("fpp-HomeAssistant"), sensorThread(nullptr), sensorUpdateFrequency(60), runSensorThread(false) {
         LogInfo(VB_PLUGIN, "Initializing Home Assistant Plugin\n");
 
         Json::Value root;
