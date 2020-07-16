@@ -192,7 +192,11 @@ private:
         cfgTopic += "/";
         cfgTopic += component;
         cfgTopic += "/";
-        cfgTopic += getSetting("HostName");
+        std::string hn = getSetting("HostName");
+        if (hn == "") {
+            hn = "FPP";
+        }
+        cfgTopic += hn;
         cfgTopic += "/";
         cfgTopic += id;
         cfgTopic += "/config";
