@@ -3,7 +3,7 @@
 
 var overlayModels = {};   // FPP Overlay Models cache
 var gpios = {};           // FPP GPIO Inputs cache
-var gpioInputConfig = {}; // FPP GPIO Input config file data
+var gpioInputConfig = []; // FPP GPIO Input config file data
 
 var config = {};          // Plugin configuration
 
