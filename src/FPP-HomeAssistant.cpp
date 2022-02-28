@@ -1,9 +1,10 @@
+#include <fpp-pch.h>
+
 #include <atomic>
 #include <unistd.h>
 #include <errno.h>
 #include <mutex>
 #include <thread>
-#include <jsoncpp/json/json.h>
 
 #include "FPP-HomeAssistant.h"
 
@@ -22,7 +23,7 @@ public:
         LogInfo(VB_PLUGIN, "Initializing Home Assistant Plugin\n");
 
         Json::Value root;
-        if (LoadJsonFromFile("/home/fpp/media/config/model-overlays.json", root)) {
+        if (LoadJsonFromFile(FPP_DIR_CONFIG("/model-overlays.json"), root)) {
             if (root.isMember("models")) {
                 overlayModelConfig = root["models"];
             } else {
@@ -34,12 +35,12 @@ public:
             overlayModelConfig = emptyArray;
         }
 
-        if (!LoadJsonFromFile("/home/fpp/media/config/gpio.json", gpioConfig)) {
+        if (!LoadJsonFromFile(FPP_DIR_CONFIG("/gpio.json"), gpioConfig)) {
             Json::Value emptyArray(Json::arrayValue);
             gpioConfig = emptyArray;
         }
 
-        if (LoadJsonFromFile("/home/fpp/media/config/plugin.fpp-HomeAssistant.json", config)) {
+        if (LoadJsonFromFile(FPP_DIR_CONFIG("/plugin.fpp-HomeAssistant.json"), config)) {
             if (config.isMember("models")) {
                 Json::Value::Members modelNames = config["models"].getMemberNames();
                 for (unsigned int i = 0; i < modelNames.size(); i++) {
