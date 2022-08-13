@@ -1,12 +1,11 @@
 #include <fpp-pch.h>
 
+#include <algorithm>
 #include <atomic>
 #include <unistd.h>
 #include <errno.h>
 #include <mutex>
 #include <thread>
-
-#include "FPP-HomeAssistant.h"
 
 #include "commands/Commands.h"
 #include "common.h"
@@ -14,12 +13,21 @@
 #include "settings.h"
 #include "Plugin.h"
 #include "log.h"
+#include "overlays/PixelOverlay.h"
+#include "overlays/PixelOverlayModel.h"
 #include "sensors/Sensors.h"
 #include "util/GPIOUtils.h"
 
 class FPPHomeAssistantPlugin : public FPPPlugin, public httpserver::http_resource {
 public:
-    FPPHomeAssistantPlugin() : FPPPlugin("fpp-HomeAssistant"), sensorThread(nullptr), sensorUpdateFrequency(60), runSensorThread(false) {
+    FPPHomeAssistantPlugin()
+      : FPPPlugin("fpp-HomeAssistant"),
+        sensorUpdateFrequency(60),
+        sensorThread(nullptr),
+        runSensorThread(false),
+        lightThread(nullptr),
+        runLightThread(false)
+    {
         LogInfo(VB_PLUGIN, "Initializing Home Assistant Plugin\n");
 
         Json::Value root;
@@ -58,6 +66,87 @@ public:
                 mqtt->AddCallback("/ha/light/#", lf);
 
                 SendLightConfigs();
+
+                runLightThread = true;
+                lightThread = new std::thread([this]() {
+                    PixelOverlayModel *model = nullptr;
+                    Json::Value::Members modelNames = config["models"].getMemberNames();
+                    std::map<std::string, std::string> states;
+                    std::map<std::string, std::string>::iterator it;
+                    Json::Value state;
+                    Json::Value color;
+                    std::string modelName;
+                    std::string newStateStr;
+                    std::string oldStateStr;
+                    uint8_t *data = nullptr;
+                    int brightness = 255;
+                    std::unique_lock<std::mutex> lock(cacheLock);
+
+                    lock.unlock();
+
+                    state["brightness"] = brightness;
+                    state["color_mode"] = "rgb";
+                    state["color"] = color;
+
+                    while (runLightThread) {
+                        for (unsigned int i = 0; i < modelNames.size(); i++) {
+                            modelName = modelNames[i];
+                            if (!config["models"][modelName]["Enabled"].asInt())
+                                continue;
+
+                            model = PixelOverlayManager::INSTANCE.getModel(modelName);
+                            if (model) {
+                                state["state"] = (model->getState().getState() == PixelOverlayState::PixelState::Disabled) ? "OFF" : "ON";
+
+                                lock.lock();
+
+                                // Get brightness out of the cache so we can reverse it out of RGB values
+                                if (cache[modelName].isMember("brightness")) {
+                                    brightness = cache[modelName]["brightness"].asInt();
+                                } else {
+                                    brightness = 255;
+                                }
+
+                                // Get our current RGB values
+                                data = model->getOverlayBuffer();
+                                if (data) {
+                                    state["color"]["r"] = std::min(255, (int)(1.0 * data[0] * 255 / brightness));
+                                    state["color"]["g"] = std::min(255, (int)(1.0 * data[1] * 255 / brightness));
+                                    state["color"]["b"] = std::min(255, (int)(1.0 * data[2] * 255 / brightness));
+                                } else {
+                                    state["color"]["r"] = 0;
+                                    state["color"]["g"] = 0;
+                                    state["color"]["b"] = 0;
+                                }
+
+                                // Save current RGB values back into the cache
+                                cache[modelName]["color"] = state["color"];
+
+                                lock.unlock();
+
+                                state["brightness"] = brightness;
+
+                                newStateStr = SaveJsonToString(state);
+
+                                oldStateStr = "";
+                                it = states.find(modelName);
+                                if (it != states.end())
+                                    oldStateStr = it->second;
+
+                                if (oldStateStr != newStateStr) {
+                                    states[modelName] = newStateStr;
+
+                                    std::string stateTopic = "ha/light/";
+                                    stateTopic += config["models"][modelName]["LightName"].asString();
+                                    stateTopic += "/state";
+                                    mqtt->Publish(stateTopic, newStateStr);
+                                }
+                            }
+                        }
+
+                        sleep(1);
+                    }
+                });
             }
 
             if (config.isMember("gpios")) {
@@ -154,6 +243,10 @@ public:
             runSensorThread = false;
             sensorThread->join();
         }
+        if (runLightThread) {
+            runLightThread = false;
+            lightThread->join();
+        }
     }
 
 private:
@@ -171,6 +264,8 @@ private:
     Json::Value       sensors;
     std::thread      *sensorThread;
     std::atomic_bool  runSensorThread;
+    std::thread      *lightThread;
+    std::atomic_bool  runLightThread;
 
     /////////////////////////////////////////////////////////////////////////
     // Functions supporting discovery
@@ -274,6 +369,9 @@ private:
     void SendLightConfigs() {
         LogDebug(VB_PLUGIN, "Sending Overlay Model -> Light Configs\n");
         Json::Value::Members modelNames = config["models"].getMemberNames();
+        std::unique_lock<std::mutex> lock(cacheLock);
+        Json::Value info;
+
         for (unsigned int i = 0; i < modelNames.size(); i++) {
             if (!config["models"][modelNames[i]]["Enabled"].asInt())
                 continue;
@@ -289,6 +387,9 @@ private:
             s["effect"] = false;
 
             AddHomeAssistantDiscoveryConfig("light", lightName, s);
+
+            // Put an empty entry in our cache to optimize code later
+            cache[modelNames[i]] = info;
         }
     }
 
@@ -382,20 +483,22 @@ private:
             args.append("Disabled");
             cmd["args"] = args;
             CommandManager::INSTANCE.run(cmd);
-
-            if (cache.isMember(modelName)) {
-                s = cache[modelName];
-                s["state"] = "OFF";
-            }
         } else if (newState != "ON") {
             return;
         } else {
             LogExcess(VB_PLUGIN, "Light Config Received: %s\n", SaveJsonToString(s).c_str());
 
             if (!s.isMember("color")) {
-                if (cache.isMember(modelName) && cache[modelName].isMember("color")) {
+                if (cache[modelName].isMember("color")) {
                     s["color"] = cache[modelName]["color"];
+                    // Turning light on with no color and cached color is 0,0,0, so set full white
+                    if ((s["color"]["r"].asInt() == 0) && (s["color"]["g"].asInt() == 0) && (s["color"]["b"].asInt() == 0)) {
+                        s["color"]["r"] = 255;
+                        s["color"]["g"] = 255;
+                        s["color"]["b"] = 255;
+                    }
                 } else {
+                    // Turning light on with no color and no cached color, so set full white
                     Json::Value c;
                     c["r"] = 255;
                     c["g"] = 255;
@@ -405,8 +508,8 @@ private:
             }
 
             if (!s.isMember("brightness")) {
-                if (cache.isMember(modelName) && cache[modelName].isMember("brightness")) {
-                    s["brightness"] = cache[modelName]["brightness"];
+                if (cache[modelName].isMember("brightness")) {
+                    s["brightness"] = cache[modelName]["brightness"].asInt();
                 } else {
                     s["brightness"] = 255;
                 }
@@ -434,15 +537,6 @@ private:
         }
 
         cache[modelName] = s;
-
-        lock.unlock();
-
-        std::string state = SaveJsonToString(s);
-
-        std::string stateTopic = "ha/light/";
-        stateTopic += lightName;
-        stateTopic += "/state";
-        mqtt->Publish(stateTopic, state);
     }
 
     /////////////////////////////////////////////////////////////////////////
