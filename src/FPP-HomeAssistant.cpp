@@ -274,12 +274,14 @@ private:
         LogDebug(VB_PLUGIN, "Adding Home Assistant discovery config for %s/%s\n", component.c_str(), id.c_str());
         std::string cfgTopic = getSetting("MQTTHADiscoveryPrefix");
 
+        bool isSensor = false;
         bool hasCmd = true;
         bool hasState = true;
 
         if ((component == "binary_sensor") ||
             (component == "sensor")) {
             hasCmd = false;
+            isSensor = true;
         }
 
         if (cfgTopic.empty())
@@ -307,14 +309,10 @@ private:
         stateTopic += "/state";
         cmdTopic += "/cmd";
 
-        if (getSettingInt("MQTTHADiscoveryAddHost", 0)) {
-            std::string name = getSetting("HostName");
-            name += "_";
-            name += id;
-            config["name"] = name;
-        } else {
-            config["name"] = id;
-        }
+        std::string parentId = getSetting("HostName");
+
+        // Prefix name with host-name to ensure entities are easier to differentiate
+        config["name"] = parentId + " " + id;
 
         if (hasState)
             config["state_topic"] = stateTopic;
@@ -322,20 +320,26 @@ private:
         if (hasCmd)
             config["command_topic"] = cmdTopic;
 
-        std::string uid = getSetting("HostName");
-        uid += "_";
-        uid += id;
-        config["unique_id"] = uid;
+        // Entities are scoped to this FPP instance so always prefix with hostname
+        config["unique_id"] = parentId + "_" + id;
 
-        config["device"]["name"] = id;
+        config["device"]["identifiers"] = Json::arrayValue;
+        if (isSensor) {
+            // For sensors the FPP host is the device
+            config["device"]["name"] = parentId;
+            config["device"]["identifiers"].append(parentId);
+        } else {
+            // For non-sensors (lights, switches) the entity is also the device
+            config["device"]["name"] = config["name"];
+            config["device"]["identifiers"].append(config["unique_id"]);
+            config["device"]["via_device"] = parentId;
+        }
+
         config["device"]["manufacturer"] = "Falcon Player";
         // TODO(edalquist) how do I get platform/version in code?
         // config["device"]["model"] = getSetting("Platform") + "(" + getSetting("Variant") + ")";
         config["device"]["configuration_url"] = "http://" + getSetting("HostName") + "/plugin.php?_menu=content&plugin=fpp-HomeAssistant&page=plugin_setup.php";
         config["device"]["sw_version"] = getFPPVersion();
-        config["device"]["identifiers"] = Json::arrayValue;
-        config["device"]["identifiers"].append(uid);
-        config["device"]["via_device"] = getSetting("SystemUUID");
 
         std::string configStr = SaveJsonToString(config);
         mqtt->PublishRaw(cfgTopic, configStr);
