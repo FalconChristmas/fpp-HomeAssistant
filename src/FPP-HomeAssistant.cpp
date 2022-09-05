@@ -322,6 +322,21 @@ private:
         if (hasCmd)
             config["command_topic"] = cmdTopic;
 
+        std::string uid = getSetting("HostName");
+        uid += "_";
+        uid += id;
+        config["unique_id"] = uid;
+
+        config["device"]["name"] = id;
+        config["device"]["manufacturer"] = "Falcon Player";
+        // TODO(edalquist) how do I get platform/version in code?
+        // config["device"]["model"] = getSetting("Platform") + "(" + getSetting("Variant") + ")";
+        config["device"]["configuration_url"] = "http://" + getSetting("HostName") + "/plugin.php?_menu=content&plugin=fpp-HomeAssistant&page=plugin_setup.php";
+        config["device"]["sw_version"] = getFPPVersion();
+        config["device"]["identifiers"] = Json::arrayValue;
+        config["device"]["identifiers"].append(uid);
+        config["device"]["via_device"] = getSetting("SystemUUID");
+
         std::string configStr = SaveJsonToString(config);
         mqtt->PublishRaw(cfgTopic, configStr);
 
