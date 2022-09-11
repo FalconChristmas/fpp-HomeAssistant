@@ -424,6 +424,10 @@ private:
 
             Json::Value s;
 
+            if (sensor["DeviceClass"].asString() != "None") {
+                s["device_class"] = sensor["DeviceClass"].asString();
+            }
+
             AddHomeAssistantDiscoveryConfig("sensor", sensor["SensorName"].asString(), s);
         }
     }

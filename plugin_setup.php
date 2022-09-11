@@ -7,11 +7,31 @@ var gpioInputConfig = []; // FPP GPIO Input config file data
 
 var config = {};          // Plugin configuration
 
-function GetDeviceClassSelect(currentValue, mode) {
-    var deviceClasses = [ 'None', 'battery', 'cold', 'connectivity', 'door', 'garage_door', 'gas', 'heat', 'light', 'lock', 'moisture', 'motion', 'moving', 'occupancy', 'opening', 'plug', 'power', 'presence', 'problem', 'safety', 'smoke', 'sound', 'vibration', 'window' ];
+// From https://www.home-assistant.io/integrations/binary_sensor/#device-class
+function getBinarySensorDeviceClassSelect(currentValue, mode) {
+    var deviceClasses = [ 'None', 'battery', 'battery_charging', 'carbon_monoxide', 'cold', 'connectivity', 'door', 'garage_door', 'gas', 'heat', 'light', 'lock', 'moisture', 'motion', 'moving', 'occupancy', 'opening', 'plug', 'power', 'presence', 'problem', 'running', 'safety', 'smoke', 'sound', 'tamper', 'update', 'vibration', 'window' ];
     var input = "<td><select class='deviceClass'";
     if (mode != 'binary_sensor')
         input += " style='display: none;'";
+    input += ">";
+    for (var i = 0; i < deviceClasses.length; i++) {
+        input += "<option value='" + deviceClasses[i] + "'";
+        if (deviceClasses[i] == currentValue)
+            input += " selected";
+        input += ">" + deviceClasses[i] + "</option>";
+    }
+    input += "</select></td>";
+    return input;
+}
+
+// From https://www.home-assistant.io/integrations/sensor/#device-class
+function GetSensorDeviceClassSelect(currentValue) {
+    var deviceClasses = [ 
+        'None', 'apparent_power', 'aqi', 'battery', 'carbon_dioxide', 'carbon_monoxide', 'current', 'date', 'duration',
+        'energy', 'frequency', 'gas', 'humidity', 'illuminance', 'monetary', 'nitrogen_dioxide', 'nitrogen_monoxide',
+        'nitrous_oxide', 'ozone', 'pm1', 'pm10', 'pm25', 'power_factor', 'power', 'pressure', 'reactive_power',
+        'signal_strength', 'sulphur_dioxide', 'temperature', 'timestamp', 'volatile_organic_compounds', 'voltage'];
+    var input = "<td><select class='deviceClass'";
     input += ">";
     for (var i = 0; i < deviceClasses.length; i++) {
         input += "<option value='" + deviceClasses[i] + "'";
@@ -86,6 +106,7 @@ function SaveHAConfig() {
         sensor.Name = $(this).find('.fppSensorName').html();
         sensor.Label = $(this).find('.fppSensorLabel').html();
         sensor.SensorName = $(this).find('.sensorName').val().trim();
+        sensor.DeviceClass = $(this).find('.deviceClass').val();
         var name = sensor.Label.replace(/[^a-zA-Z0-9_]/g, '');
 
         if (sensor.SensorName == '') {
@@ -272,6 +293,8 @@ function LoadConfig() {
 
             row += "<td style='display: none;' class='fppSensorLabel'>" + fppSensors[i].label + "</td>";
 
+            row += GetSensorDeviceClassSelect(fppSensors[i].valueType.toLowerCase(), 'sensor');
+
             row += "</tr>";
 
             $('#sensorsBody').append(row);
@@ -312,9 +335,9 @@ function LoadConfig() {
 
             if ((config.hasOwnProperty('gpios')) &&
                 (config['gpios'].hasOwnProperty(fppGPIOs[i].pin)))
-                row += GetDeviceClassSelect(config['gpios'][fppGPIOs[i].pin].DeviceClass, config['gpios'][fppGPIOs[i].pin].Component);
+                row += getBinarySensorDeviceClassSelect(config['gpios'][fppGPIOs[i].pin].DeviceClass, config['gpios'][fppGPIOs[i].pin].Component);
             else
-                row += GetDeviceClassSelect('', 'binary_sensor');
+                row += getBinarySensorDeviceClassSelect('', 'binary_sensor');
 
             row += "</tr>";
 
@@ -357,6 +380,7 @@ $(document).ready(function() {
                         <th title='Enable the FPP Sensor as a Sensor in HA'>Enable</th>
                         <th title='FPP Sensor Name'>FPP Sensor</th>
                         <th title='Sensor name as it appears in HA'>HA Sensor Name</th>
+                        <th title='Sensor Device Class'>HA Device Class</th>
                     </thead>
                     <tbody id='sensorsBody'>
                     </tbody>
