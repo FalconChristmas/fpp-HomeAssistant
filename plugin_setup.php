@@ -240,6 +240,8 @@ function LoadConfig() {
     $.get('/fppjson.php?command=getFPPstatus', function(fppStatus) {
         fppSensors = fppStatus.sensors;
 
+        updateWarnings(fppStatus);
+
         $('#sensorsBody').empty();
 
         if (config.hasOwnProperty("sensorUpdateFrequency")) {
@@ -330,6 +332,8 @@ $(document).ready(function() {
 
 </script>
 
+
+<div id="warningsRow" class="alert alert-danger"><div id="warningsTd"><div id="warningsDiv"></div></div></div>
 <div id="global" class="settings">
     <fieldset>
         <legend>Home Assistant MQTT Discovery</legend>
