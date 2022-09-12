@@ -1,5 +1,38 @@
 
 <script>
+const SENSOR_DEVICE_CLASSES = {
+        "apparent_power":["VA"],
+        "aqi":[],
+        "battery":["%"],
+        "carbon_dioxide":["CO2"],
+        "carbon_monoxide":["CO"],
+        "current":["mA","A"],
+        "date":[],
+        "duration":["μs","ms","s","min","h","d","w","m","y"],
+        "energy":["Wh","kWh","MWh"],
+        "frequency":["Hz","kHz","MHz","GHz"],
+        "gas":["m³","ft³"],
+        "humidity":["%"],
+        "illuminance":["lx","lm"],
+        "monetary":["€","$","¢"],
+        "nitrogen_dioxide":["µg/m³"],
+        "nitrogen_monoxide":["µg/m³"],
+        "nitrous_oxide":["µg/m³"],
+        "ozone":["µg/m³"],
+        "pm1":["µg/m³"],
+        "pm10":["µg/m³"],
+        "pm25":["µg/m³"],
+        "power_factor":["%"],
+        "power":["W","kW","BTU/h"],
+        "pressure":["Pa","kPa","hPa","bar","cbar","mbar","mmHg","inHg","psi"],
+        "reactive_power":["var"],
+        "signal_strength":["dB","dBm"],
+        "sulphur_dioxide":["µg/m³"],
+        "temperature":["°C","°F","K"],
+        "timestamp":[],
+        "volatile_organic_compounds":["µg/m³"],
+        "voltage":["mV","V"]
+    };
 
 var overlayModels = {};   // FPP Overlay Models cache
 var gpios = {};           // FPP GPIO Inputs cache
@@ -25,22 +58,47 @@ function getBinarySensorDeviceClassSelect(currentValue, mode) {
 }
 
 // From https://www.home-assistant.io/integrations/sensor/#device-class
-function GetSensorDeviceClassSelect(currentValue) {
-    var deviceClasses = [ 
-        'None', 'apparent_power', 'aqi', 'battery', 'carbon_dioxide', 'carbon_monoxide', 'current', 'date', 'duration',
-        'energy', 'frequency', 'gas', 'humidity', 'illuminance', 'monetary', 'nitrogen_dioxide', 'nitrogen_monoxide',
-        'nitrous_oxide', 'ozone', 'pm1', 'pm10', 'pm25', 'power_factor', 'power', 'pressure', 'reactive_power',
-        'signal_strength', 'sulphur_dioxide', 'temperature', 'timestamp', 'volatile_organic_compounds', 'voltage'];
-    var input = "<td><select class='deviceClass'";
-    input += ">";
-    for (var i = 0; i < deviceClasses.length; i++) {
-        input += "<option value='" + deviceClasses[i] + "'";
-        if (deviceClasses[i] == currentValue)
+function GetSensorDeviceClassSelect(currentDevice, currentUnit) {
+    var input = "<td><select class='deviceClass' onchange='UpdateSensorUnitSelect(this, \"" + currentUnit + "\")'>";
+    var selected = null;
+    for (const [device, units] of Object.entries(SENSOR_DEVICE_CLASSES)) {
+        if (selected == null) {
+            selected = device;
+        }
+        input += "<option value='" + device + "'";
+        if (device == currentDevice) {
+            selected = device;
             input += " selected";
-        input += ">" + deviceClasses[i] + "</option>";
+        }
+        input += ">" + device + "</option>";
     }
     input += "</select></td>";
+
+    input += "<td><select class='unitOfMeasure'>";
+    for (const units of SENSOR_DEVICE_CLASSES[selected]) {
+        input += "<option value='" + units + "'";
+        if (units == currentUnit) {
+            input += " selected";
+        }
+        input += ">" + units + "</option>";
+    }
+    input += "</select></td>";
+
     return input;
+}
+
+function UpdateSensorUnitSelect(deviceSelect) {
+    var device = $(deviceSelect).val();
+
+    // Remove all existing options
+    var unitOfMeasureSelect = $(deviceSelect).parent().parent().find('.unitOfMeasure');
+    unitOfMeasureSelect.find('option').remove();
+    for (const units of SENSOR_DEVICE_CLASSES[device]) {
+        unitOfMeasureSelect.append($('<option>', {
+            value: units,
+            text: units
+        }));
+    }
 }
 
 function HideShowDeviceClass(item) {
@@ -107,6 +165,7 @@ function SaveHAConfig() {
         sensor.Label = $(this).find('.fppSensorLabel').html();
         sensor.SensorName = $(this).find('.sensorName').val().trim();
         sensor.DeviceClass = $(this).find('.deviceClass').val();
+        sensor.UnitOfMeasure = $(this).find('.unitOfMeasure').val();
         var name = sensor.Label.replace(/[^a-zA-Z0-9_]/g, '');
 
         if (sensor.SensorName == '') {
@@ -280,7 +339,7 @@ function LoadConfig() {
             fppSensors[i].name = name;
 
             row += "></th>" +
-                "<td class='fppSensorName'>" + label + "</td>";
+                "<td class='fppSensorName'>" + label + " (" + fppSensors[i].formatted + ")</td>";
 
             row += "<td><input class='sensorName' size='32' maxlength='32' value='";
             if ((config.hasOwnProperty('sensors')) &&
@@ -293,7 +352,13 @@ function LoadConfig() {
 
             row += "<td style='display: none;' class='fppSensorLabel'>" + fppSensors[i].label + "</td>";
 
-            row += GetSensorDeviceClassSelect(fppSensors[i].valueType.toLowerCase(), 'sensor');
+            var deviceClass = '';
+            var unitOfMeasure = '';
+            if (config.hasOwnProperty('sensors') && config['sensors'].hasOwnProperty(name)) {
+                deviceClass = config['sensors'][name].DeviceClass || fppSensors[i].valueType.toLowerCase();
+                unitOfMeasure = config['sensors'][name].UnitOfMeasure || '';
+            }
+            row += GetSensorDeviceClassSelect(deviceClass, unitOfMeasure);
 
             row += "</tr>";
 
@@ -380,7 +445,8 @@ $(document).ready(function() {
                         <th title='Enable the FPP Sensor as a Sensor in HA'>Enable</th>
                         <th title='FPP Sensor Name'>FPP Sensor</th>
                         <th title='Sensor name as it appears in HA'>HA Sensor Name</th>
-                        <th title='Sensor Device Class'>HA Device Class</th>
+                        <th title='Device Class'>HA Device Class</th>
+                        <th title='Unit of Measurement'>HA Unit</th>
                     </thead>
                     <tbody id='sensorsBody'>
                     </tbody>
