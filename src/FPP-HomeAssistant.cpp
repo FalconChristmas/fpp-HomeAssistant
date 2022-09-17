@@ -439,7 +439,9 @@ private:
             Json::Value s;
 
             if (gpio["Component"].asString() == "binary_sensor") {
-                s["device_class"] = gpio["DeviceClass"].asString();
+                if (gpio["DeviceClass"].asString() != "None") {
+                    s["device_class"] = gpio["DeviceClass"].asString();
+                }
             }
 
             AddHomeAssistantDiscoveryConfig(gpio["Component"].asString(), gpio["DeviceName"].asString(), s);
