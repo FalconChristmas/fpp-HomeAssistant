@@ -323,7 +323,7 @@ private:
             config["command_topic"] = cmdTopic;
 
         std::string configStr = SaveJsonToString(config);
-        mqtt->PublishRaw(cfgTopic, configStr);
+        mqtt->PublishRaw(cfgTopic, configStr, true);
 
         // Store a copy of this so we can detect when we remove models
         cfgTopic = "ha/";
@@ -331,7 +331,7 @@ private:
         cfgTopic += "/";
         cfgTopic += id;
         cfgTopic += "/config";
-        mqtt->Publish(cfgTopic, configStr);
+        mqtt->Publish(cfgTopic, configStr, true);
     }
 
     void RemoveHomeAssistantDiscoveryConfig(const std::string &component, const std::string &id)
