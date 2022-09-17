@@ -49,7 +49,19 @@ public:
         }
 
         if (LoadJsonFromFile(FPP_DIR_CONFIG("/plugin.fpp-HomeAssistant.json"), config)) {
+            if (mqtt == nullptr) {
+                LogErr(VB_PLUGIN, "MQTT Is Not Configured, cannot configure Home Assistant Plugin\n");
+                WarningHolder::AddWarning("MQTT Is Not Configured, cannot configure Home Assistant Plugin");
+                return;
+            }
+            if (!mqtt->IsConnected()) {
+                LogErr(VB_PLUGIN, "MQTT Is Not Connected, cannot configure Home Assistant Plugin\n");
+                WarningHolder::AddWarning("MQTT Is Not Connected, cannot configure Home Assistant Plugin");
+                return;
+            }
+
             if (config.isMember("models")) {
+                LogExcess(VB_PLUGIN, "Setup Models\n");
                 Json::Value::Members modelNames = config["models"].getMemberNames();
                 for (unsigned int i = 0; i < modelNames.size(); i++) {
                     std::string lightName = config["models"][modelNames[i]]["LightName"].asString();
@@ -150,6 +162,7 @@ public:
             }
 
             if (config.isMember("gpios")) {
+                LogExcess(VB_PLUGIN, "Setup GPIOs\n");
                 Json::Value::Members gpioNames = config["gpios"].getMemberNames();
 
                 for (unsigned int i = 0; i < gpioNames.size(); i++) {
@@ -176,6 +189,7 @@ public:
 
             runSensorThread = false;
             if (config.isMember("sensors")) {
+                LogExcess(VB_PLUGIN, "Setup Sensors\n");
                 Json::Value emptyArray(Json::arrayValue);
                 Json::Value::Members sensorNames = config["sensors"].getMemberNames();
                 sensorUpdateFrequency = config["sensorUpdateFrequency"].asInt();
@@ -235,6 +249,7 @@ public:
 
                 }
             }
+            LogDebug(VB_PLUGIN, "Home Assistant Init Complete\n");
         }
     }
 
