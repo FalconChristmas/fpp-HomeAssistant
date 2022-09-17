@@ -460,6 +460,13 @@ private:
 
             Json::Value s;
 
+            if (sensor["DeviceClass"].asString() != "None") {
+                s["device_class"] = sensor["DeviceClass"].asString();
+            }
+            if (sensor["UnitOfMeasure"].asString() != "") {
+                s["unit_of_measurement"] = sensor["UnitOfMeasure"].asString();
+            }
+
             AddHomeAssistantDiscoveryConfig("sensor", sensor["SensorName"].asString(), s);
         }
     }
@@ -610,7 +617,7 @@ private:
     // here, not any actual commands from HA
     virtual void SensorMessageHandler(const std::string &topic, const std::string &payload) {
         std::vector<std::string> parts = split(topic, '/'); // "/ha/sensor/SensorName/*"
-LogDebug(VB_PLUGIN, "Got a /sensor/ message: %s\n", topic.c_str());
+        LogDebug(VB_PLUGIN, "Got a /sensor/ message: %s\n", topic.c_str());
 
         std::string sensorName = parts[3];
         if ((parts[4] == "config") &&
