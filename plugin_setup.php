@@ -167,6 +167,10 @@ function ShowEffectCommand(button) {
 
 function DeleteEffect(item) {
     var row = $(item).parent().parent();
+
+    if ($(item).parent().parent().parent().parent().parent().find('.effects > tr').length == 1)
+        $(item).parent().parent().parent().parent().parent().find('.effectsHead').hide();
+
     $(row).remove();
 }
 
