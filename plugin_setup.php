@@ -145,13 +145,15 @@ function EffectCommandUpdated(row, data) {
     $(row).find('.runCommandJSON').html(json);
 }
 
-function ShowEffectCommand(button) {
+function ShowEffectCommand(button, modelName) {
     var item = $(button).parent().find('.runCommandJSON');
     var cmd = {};
     var json = $(item).text();
 
-    if (json != '')
+    if (json != '') {
         cmd = JSON.parse(json);
+        cmd.args[0] = modelName;
+    }
 
     allowMultisyncCommands = true;
 
@@ -174,10 +176,10 @@ function DeleteEffect(item) {
     $(row).remove();
 }
 
-function AddLightEffect(item) {
+function AddLightEffect(item, modelName) {
     var effects = $(item).parent().parent().parent().parent().parent().find('.effects');
     var defaultName = 'Effect-' + PadLeft('' + ($(effects).find('tr').length+1), '0', 2);
-    var rowStr = "<tr><td class='center' valign='middle'><div class='rowGrip'><i class='rowGripIcon fpp-icon-grip'></i></div></td><td><input type='text' size='32' maxlength='32' class='effectName' value='" + defaultName + "'></input></td><td><button type='button' class='buttons wideButton' onClick='ShowEffectCommand(this);'><span class='hidden runCommandJSON'></span><i class='fas fa-cog'></i></button></td><td><button class='buttons btn-outline-danger' onClick='DeleteEffect(this);'><i class='fas fa-trash-alt'></i></button></td></tr>";
+    var rowStr = "<tr><td class='center' valign='middle'><div class='rowGrip'><i class='rowGripIcon fpp-icon-grip'></i></div></td><td><input type='text' size='32' maxlength='32' class='effectName' value='" + defaultName + "'></input></td><td><button type='button' class='buttons wideButton' onClick='ShowEffectCommand(this, \"" + modelName + "\");'><span class='hidden runCommandJSON'></span><i class='fas fa-cog'></i></button></td><td><button class='buttons btn-outline-danger' onClick='DeleteEffect(this);'><i class='fas fa-trash-alt'></i></button></td></tr>";
     $(effects).append(rowStr);
 
     $(item).parent().parent().parent().parent().parent().find('.effectsHead').show();
@@ -218,6 +220,7 @@ function SaveHAConfig() {
             }
 
             effect.Command = JSON.parse($(this).find('.runCommandJSON').html());
+            effect.Command.args[0] = model.Name;
             effects.push(effect);
         });
 
@@ -413,15 +416,15 @@ function LoadConfig() {
                 (config['models'].hasOwnProperty(fppModels[i].Name)) &&
                 (config['models'][fppModels[i].Name].hasOwnProperty('Effects'))) {
                 var effects = config['models'][fppModels[i].Name].Effects;
-                for (var i = 0; i < effects.length; i++) {
+                for (var j = 0; j < effects.length; j++) {
                     hasEffectsDefined = true;
-                    row += "<tr><td class='center' valign='middle'><div class='rowGrip'><i class='rowGripIcon fpp-icon-grip'></i></div></td><td><input type='text' size='32' maxlength='32' class='effectName' value='" + effects[i].Name + "'></input></td><td><button type='button' class='buttons wideButton' onClick='ShowEffectCommand(this);'><span class='hidden runCommandJSON'>" + JSON.stringify(effects[i].Command) + "</span><i class='fas fa-cog'></i></button></td><td><button class='buttons btn-outline-danger' onClick='DeleteEffect(this);'><i class='fas fa-trash-alt'></i></button></td></tr>";
+                    row += "<tr><td class='center' valign='middle'><div class='rowGrip'><i class='rowGripIcon fpp-icon-grip'></i></div></td><td><input type='text' size='32' maxlength='32' class='effectName' value='" + effects[j].Name + "'></input></td><td><button type='button' class='buttons wideButton' onClick='ShowEffectCommand(this, \"" + fppModels[i].Name + "\");'><span class='hidden runCommandJSON'>" + JSON.stringify(effects[j].Command) + "</span><i class='fas fa-cog'></i></button></td><td><button class='buttons btn-outline-danger' onClick='DeleteEffect(this);'><i class='fas fa-trash-alt'></i></button></td></tr>";
                 }
             }
 
             row += "</tbody>"
                 + "<tfoot class='tfoot'>"
-                    + "<tr><td></td><td><input type='button' class='buttons' value='Add' onClick='AddLightEffect(this);'></td></tr>"
+                    + "<tr><td></td><td><input type='button' class='buttons' value='Add' onClick='AddLightEffect(this, \"" + fppModels[i].Name + "\");'></td></tr>"
                     + "</tfoot>"
                 + "</table></td></tr>";
 
