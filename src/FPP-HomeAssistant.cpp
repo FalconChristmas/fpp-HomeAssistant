@@ -55,9 +55,14 @@ public:
                 return;
             }
             if (!mqtt->IsConnected()) {
-                LogErr(VB_PLUGIN, "MQTT Is Not Connected, cannot configure Home Assistant Plugin\n");
-                WarningHolder::AddWarning("MQTT Is Not Connected, cannot configure Home Assistant Plugin");
-                return;
+                for (unsigned int x = 0; (x < 5) && (!mqtt->IsConnected()); x++) {
+                    sleep(1);
+                }
+                if (!mqtt->IsConnected()) {
+                    LogErr(VB_PLUGIN, "MQTT Is Not Connected, cannot configure Home Assistant Plugin\n");
+                    WarningHolder::AddWarning("MQTT Is Not Connected, cannot configure Home Assistant Plugin");
+                    return;
+                }
             }
 
             if (config.isMember("models")) {
@@ -131,8 +136,12 @@ public:
                                     state["color"]["b"] = 0;
                                 }
 
-                                // Save current RGB values back into the cache
-                                cache[modelName]["color"] = state["color"];
+                                if (!cache[modelName].isMember("effect") || (cache[modelName]["effect"] == "")) {
+                                    cache[modelName]["color"] = state["color"];
+                                    state["effect"] = "";
+                                } else {
+                                    state["effect"] = cache[modelName]["effect"];
+                                }
 
                                 lock.unlock();
 
@@ -284,7 +293,7 @@ private:
 
     /////////////////////////////////////////////////////////////////////////
     // Functions supporting discovery
-    void AddHomeAssistantDiscoveryConfig(const std::string &component, const std::string &id, Json::Value &config)
+    void AddHomeAssistantDiscoveryConfig(const std::string &component, const std::string &id, Json::Value &config, Json::Value &pConfig)
     {
         LogDebug(VB_PLUGIN, "Adding Home Assistant discovery config for %s/%s\n", component.c_str(), id.c_str());
         std::string cfgTopic = getSetting("MQTTHADiscoveryPrefix");
@@ -348,6 +357,20 @@ private:
             config["device"]["name"] = config["name"];
             config["device"]["identifiers"].append(config["unique_id"]);
             config["device"]["via_device"] = parentId;
+        }
+
+        if (pConfig.isMember("Effects") && pConfig["Effects"].size()) {
+            config["effect"] = true;
+
+            // Generate list of effect names
+            Json::Value effectList(Json::arrayValue);
+            for (unsigned int i = 0; i < pConfig["Effects"].size(); i++) {
+                effectList.append(pConfig["Effects"][i]["Name"].asString());
+            }
+
+            effectList.append("Stop Effect");
+
+            config["effect_list"] = effectList;
         }
 
         config["device"]["manufacturer"] = "Falcon Player";
@@ -420,7 +443,7 @@ private:
             s["rgb"] = true;
             s["effect"] = false;
 
-            AddHomeAssistantDiscoveryConfig("light", lightName, s);
+            AddHomeAssistantDiscoveryConfig("light", lightName, s, config["models"][modelNames[i]]);
 
             // Put an empty entry in our cache to optimize code later
             cache[modelNames[i]] = info;
@@ -444,7 +467,7 @@ private:
                 }
             }
 
-            AddHomeAssistantDiscoveryConfig(gpio["Component"].asString(), gpio["DeviceName"].asString(), s);
+            AddHomeAssistantDiscoveryConfig(gpio["Component"].asString(), gpio["DeviceName"].asString(), s, config["gpios"][gpioNames[i]]);
         }
     }
 
@@ -467,7 +490,7 @@ private:
                 s["unit_of_measurement"] = sensor["UnitOfMeasure"].asString();
             }
 
-            AddHomeAssistantDiscoveryConfig("sensor", sensor["SensorName"].asString(), s);
+            AddHomeAssistantDiscoveryConfig("sensor", sensor["SensorName"].asString(), s, config["sensors"][sensorNames[i]]);
         }
     }
 
@@ -526,10 +549,75 @@ private:
             args.append("Disabled");
             cmd["args"] = args;
             CommandManager::INSTANCE.run(cmd);
+
+            if (cache[modelName]["effect"].asString() != "")
+                s["effect"] = cache[modelName]["effect"];
         } else if (newState != "ON") {
             return;
         } else {
             LogExcess(VB_PLUGIN, "Light Config Received: %s\n", SaveJsonToString(s).c_str());
+
+            if ((!s.isMember("effect")) &&
+                (cache[modelName]["state"] == "OFF") &&
+                (cache[modelName]["effect"] != ""))
+                s["effect"] = cache[modelName]["effect"];
+
+            if (s.isMember("effect")) {
+                bool effectStillRunning = true;
+                std::string effectName = s["effect"].asString();
+                cache[modelName]["effect"] = effectName;
+
+                Json::Value cmd;
+
+                if (effectName == "Stop Effect") {
+                    Json::Value args(Json::arrayValue);
+                    cmd["command"] = "Overlay Model Effect";
+                    cmd["multisyncCommand"] = false;
+                    cmd["multisyncHosts"] = "";
+                    args.append(modelName);
+                    args.append("Enabled");
+                    args.append("Stop Effects");
+                    cmd["args"] = args;
+                } else {
+                    for (unsigned int i = 0; i < lights[lightName]["Effects"].size(); i++) {
+                        if (lights[lightName]["Effects"][i]["Name"] == effectName) {
+                            cmd = lights[lightName]["Effects"][i]["Command"];
+                            break;
+                        }
+                    }
+                }
+
+                if (cmd["command"] == "Overlay Model Effect") {
+                    std::string preEffectKey = modelName;
+                    preEffectKey += "-PreEffect";
+
+                    if (cmd["args"][2] == "Stop Effects") {
+                        // Effect is being stopped so flow through to revert to previous color
+                        effectStillRunning = false;
+                        cache[modelName] = cache[preEffectKey];
+                        cache.removeMember(preEffectKey);
+                        cache[modelName]["effect"] = "";
+                        s["effect"] = "";
+                    } else {
+                        if (!cache.isMember(preEffectKey)) {
+                            cache[preEffectKey] = cache[modelName];
+                        }
+                    }
+                } else {
+                    effectStillRunning = false;
+                }
+
+                LogExcess(VB_PLUGIN, "FPP Command: %s\n", SaveJsonToString(cmd).c_str());
+                CommandManager::INSTANCE.run(cmd);
+
+                if (effectStillRunning)
+                    return;
+
+                // Give the effect time to stop before we set the color back
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            } else {
+                cache[modelName]["effect"] = "";
+            }
 
             if (!s.isMember("color")) {
                 if (cache[modelName].isMember("color")) {
@@ -553,6 +641,8 @@ private:
             if (!s.isMember("brightness")) {
                 if (cache[modelName].isMember("brightness")) {
                     s["brightness"] = cache[modelName]["brightness"].asInt();
+                    if (s["brightness"].asInt() == 0)
+                        s["brightness"] = 255;
                 } else {
                     s["brightness"] = 255;
                 }

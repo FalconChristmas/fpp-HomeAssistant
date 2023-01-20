@@ -40,6 +40,8 @@ var gpioInputConfig = []; // FPP GPIO Input config file data
 
 var config = {};          // Plugin configuration
 
+var nameRegex = "^[-a-zA-Z0-9_][-a-zA-Z0-9_]*$";
+
 // From https://www.home-assistant.io/integrations/binary_sensor/#device-class
 function getBinarySensorDeviceClassSelect(currentValue, mode) {
     var deviceClasses = [ 'None', 'battery', 'battery_charging', 'carbon_monoxide', 'cold', 'connectivity', 'door', 'garage_door', 'gas', 'heat', 'light', 'lock', 'moisture', 'motion', 'moving', 'occupancy', 'opening', 'plug', 'power', 'presence', 'problem', 'running', 'safety', 'smoke', 'sound', 'tamper', 'update', 'vibration', 'window' ];
@@ -135,16 +137,64 @@ function GetGPIOInputPinConfig(pin, stateTopic) {
     return gc;
 }
 
+function EffectCommandUpdated(row, data) {
+    if (data.command == null)
+        return;
+
+    var json = JSON.stringify(data);
+    $(row).find('.runCommandJSON').html(json);
+}
+
+function ShowEffectCommand(button) {
+    var item = $(button).parent().find('.runCommandJSON');
+    var cmd = {};
+    var json = $(item).text();
+
+    if (json != '')
+        cmd = JSON.parse(json);
+
+    allowMultisyncCommands = true;
+
+    var args = {};
+    args.title = 'Edit Effect Command';
+    args.saveButton = 'Accept Changes';
+    args.cancelButton = 'Cancel';
+    args.showPresetSelect = true;
+    args.validCommands = ["Overlay Model Effect"];
+
+    ShowCommandEditor(button, cmd, 'EffectCommandUpdated', '', args);
+}
+
+function DeleteEffect(item) {
+    var row = $(item).parent().parent();
+    $(row).remove();
+}
+
+function AddLightEffect(item) {
+    var effects = $(item).parent().parent().parent().parent().parent().find('.effects');
+    var defaultName = 'Effect-' + PadLeft('' + ($(effects).find('tr').length+1), '0', 2);
+    var rowStr = "<tr><td class='center' valign='middle'><div class='rowGrip'><i class='rowGripIcon fpp-icon-grip'></i></div></td><td><input type='text' size='32' maxlength='32' class='effectName' value='" + defaultName + "'></input></td><td><button type='button' class='buttons wideButton' onClick='ShowEffectCommand(this);'><span class='hidden runCommandJSON'></span><i class='fas fa-cog'></i></button></td><td><button class='buttons btn-outline-danger' onClick='DeleteEffect(this);'><i class='fas fa-trash-alt'></i></button></td></tr>";
+    $(effects).append(rowStr);
+
+    $(item).parent().parent().parent().parent().parent().find('.effectsHead').show();
+}
+
 function SaveHAConfig() {
     var models = {};
+    var errors = false;
     $('#modelsBody > tr').each(function() {
         var model = {};
         model.Name = $(this).find('.modelName').html();
         model.LightName = $(this).find('.lightName').val().trim();
 
         if (model.LightName == '') {
-            model.LightName = model.Name;
-            $(this).find('.lightName').val(model.Name);
+            model.LightName = model.Name.replace(/[^-a-zA-Z0-9_]/g, "");
+            $(this).find('.lightName').val(model.LightName);
+        }
+
+        if (!RegexCheckData(nameRegex, model.LightName, "Light Name must contain only Letters, Numbers, Underscrores, and Hyphens")) {
+            errors = true;
+            return;
         }
 
         if ($(this).find('.modelEnabled').is(':checked')) {
@@ -153,8 +203,28 @@ function SaveHAConfig() {
             model.Enabled = 0;
         }
 
+        var effects = [];
+        $(this).find('.effects > tr').each(function() {
+            var effect = {};
+            effect.Name = $(this).find('.effectName').val();
+
+            if (!RegexCheckData(nameRegex, effect.Name, "Effect Name must contain only Letters, Numbers, Underscrores, and Hyphens")) {
+                errors = true;
+                return;
+            }
+
+            effect.Command = JSON.parse($(this).find('.runCommandJSON').html());
+            effects.push(effect);
+        });
+
+        if (effects.length)
+            model.Effects = effects;
+
         models[model.Name] = model;
     });
+
+    if (errors)
+        return;
 
     config['models'] = models;
 
@@ -169,8 +239,13 @@ function SaveHAConfig() {
         var name = sensor.Label.replace(/[^a-zA-Z0-9_]/g, '');
 
         if (sensor.SensorName == '') {
-            sensor.SensorName = sensor.Name;
-            $(this).find('.sensorName').val(sensor.Name);
+            sensor.SensorName = sensor.Name.replace(/[^-a-zA-Z0-9_]/g, "");
+            $(this).find('.sensorName').val(sensor.SensorName);
+        }
+
+        if (!RegexCheckData(nameRegex, sensor.SensorName, "Sensor Name must contain only Letters, Numbers, Underscrores, and Hyphens")) {
+            errors = true;
+            return;
         }
 
         if ($(this).find('.sensorEnabled').is(':checked')) {
@@ -181,6 +256,9 @@ function SaveHAConfig() {
 
         sensors[name] = sensor;
     });
+
+    if (errors)
+        return;
 
     config['sensors'] = sensors;
     config['sensorUpdateFrequency'] = parseInt($('#sensorUpdateFrequency').val());
@@ -196,6 +274,11 @@ function SaveHAConfig() {
         if (pin.DeviceName == '') {
             pin.DeviceName = pin.Pin;
             $(this).find('.deviceName').val(pin.Pin);
+        }
+
+        if (!RegexCheckData(nameRegex, pin.DeviceName, "GPIO HA Device Name must contain only Letters, Numbers, Underscrores, and Hyphens")) {
+            errors = true;
+            return;
         }
 
         if (pin.Component == 'binary_sensor')
@@ -242,6 +325,9 @@ function SaveHAConfig() {
             }
         }
     });
+
+    if (errors)
+        return;
 
     if (gpioInputConfigModified) {
         var configStr = JSON.stringify(gpioInputConfig, null, 2);
@@ -301,19 +387,47 @@ function LoadConfig() {
             row += "></th>" +
                 "<td class='modelName'>" + fppModels[i].Name + "</td>";
 
-            row += "<td><input class='lightName' size='32' maxlength='32' value='";
+            row += "<td><input type='text' class='lightName' size='32' maxlength='32' value='";
             if ((config.hasOwnProperty('models')) &&
                 (config['models'].hasOwnProperty(fppModels[i].Name)))
                 row += config['models'][fppModels[i].Name].LightName;
             else
-                row += fppModels[i].Name;
+                row += fppModels[i].Name.replace(/[^-a-zA-Z0-9_]/g, "");
 
             row += "' /></td>";
 
-            row += "</tr>";
+            row += "<td valign='top'>";
+
+            row += "<table class='effectsTable'>"
+                + "<thead class='effectsHead' style='display: none;'>"
+                    + "<tr><td></td><td>HA Effect Name</td><td>Edit</td><td>Del</td></tr>"
+                    + "</thead>"
+                + "<tbody class='effects'>";
+
+            var hasEffectsDefined = false;
+            if ((config.hasOwnProperty('models')) &&
+                (config['models'].hasOwnProperty(fppModels[i].Name)) &&
+                (config['models'][fppModels[i].Name].hasOwnProperty('Effects'))) {
+                var effects = config['models'][fppModels[i].Name].Effects;
+                for (var i = 0; i < effects.length; i++) {
+                    hasEffectsDefined = true;
+                    row += "<tr><td class='center' valign='middle'><div class='rowGrip'><i class='rowGripIcon fpp-icon-grip'></i></div></td><td><input type='text' size='32' maxlength='32' class='effectName' value='" + effects[i].Name + "'></input></td><td><button type='button' class='buttons wideButton' onClick='ShowEffectCommand(this);'><span class='hidden runCommandJSON'>" + JSON.stringify(effects[i].Command) + "</span><i class='fas fa-cog'></i></button></td><td><button class='buttons btn-outline-danger' onClick='DeleteEffect(this);'><i class='fas fa-trash-alt'></i></button></td></tr>";
+                }
+            }
+
+            row += "</tbody>"
+                + "<tfoot class='tfoot'>"
+                    + "<tr><td></td><td><input type='button' class='buttons' value='Add' onClick='AddLightEffect(this);'></td></tr>"
+                    + "</tfoot>"
+                + "</table></td></tr>";
 
             $('#modelsBody').append(row);
+
+            if (hasEffectsDefined)
+                $('#modelsBody tr:last').find('.effectsHead').show();
         }
+
+        $('.effects').sortable();
     });
 
     // Sensors (Temp/Voltage/etc.)
@@ -343,7 +457,7 @@ function LoadConfig() {
             row += "></th>" +
                 "<td class='fppSensorName'>" + label + " (" + fppSensors[i].formatted + ")</td>";
 
-            row += "<td><input class='sensorName' size='32' maxlength='32' value='";
+            row += "<td><input type='text' class='sensorName' size='32' maxlength='32' value='";
             if ((config.hasOwnProperty('sensors')) &&
                 (config['sensors'].hasOwnProperty(name)))
                 row += config['sensors'][name].SensorName;
@@ -391,7 +505,7 @@ function LoadConfig() {
                 row += GetComponentSelect('');
 
 
-            row += "<td><input class='deviceName' size='32' maxlength='32' value='";
+            row += "<td><input type='text' class='deviceName' size='32' maxlength='32' value='";
             if ((config.hasOwnProperty('gpios')) &&
                 (config['gpios'].hasOwnProperty(fppGPIOs[i].pin)))
                 row += config['gpios'][fppGPIOs[i].pin].DeviceName;
@@ -424,15 +538,28 @@ $(document).ready(function() {
 <div id="warningsRow" class="alert alert-danger"><div id="warningsTd"><div id="warningsDiv"></div></div></div>
 <div id="global" class="settings">
     <fieldset>
-        <legend>Home Assistant MQTT Discovery</legend>
+        <div class="row tablePageHeader">
+            <div class="col-md">
+                <h2>Home Assistant MQTT Discovery</h2>
+            </div>
+            <div class="col-md-auto ml-lg-auto">
+                <div class="form-actions">
+                    <input type='button' class='buttons btn-success' value='Save HA Config' onClick='SaveHAConfig();'>
+                </div>
+            </div>
+        </div>
+
         <b>Discover FPP Overlay Models as RGB Lights:</b><br>
         <div class='fppTableWrapper fppTableWrapperAsTable'>
             <div class='fppTableContents'>
-                <table id='modelsTable'>
+                <table id='modelsTable' class='fppSelectableRowTable'>
                     <thead>
-                        <th title='Enable the Overlay Model as a Light in HA'>Enable</th>
-                        <th title='FPP Overlay Model Name'>Model Name</th>
-                        <th title='Light name as it appears in HA'>HA Light Name</th>
+                        <tr class='tblheader'>
+                            <th title='Enable the Overlay Model as a Light in HA'>Enable</th>
+                            <th title='FPP Overlay Model Name'>Model Name</th>
+                            <th title='Light name as it appears in HA'>HA Light Name</th>
+                            <th title='FPP Commands for HA Light effects'>FPP Commands for HA Light effects</th>
+                        </tr>
                     </thead>
                     <tbody id='modelsBody'>
                     </tbody>
@@ -444,13 +571,15 @@ $(document).ready(function() {
         <b>Discover FPP Sensors:</b><br>
         <div class='fppTableWrapper fppTableWrapperAsTable'>
             <div class='fppTableContents'>
-                <table id='sensorsTable'>
+                <table id='sensorsTable' class='fppSelectableRowTable'>
                     <thead>
-                        <th title='Enable the FPP Sensor as a Sensor in HA'>Enable</th>
-                        <th title='FPP Sensor Name'>FPP Sensor</th>
-                        <th title='Sensor name as it appears in HA'>HA Sensor Name</th>
-                        <th title='Device Class'>HA Device Class</th>
-                        <th title='Unit of Measurement'>HA Unit</th>
+                        <tr class='tblheader'>
+                            <th title='Enable the FPP Sensor as a Sensor in HA'>Enable</th>
+                            <th title='FPP Sensor Name'>FPP Sensor</th>
+                            <th title='Sensor name as it appears in HA'>HA Sensor Name</th>
+                            <th title='Device Class'>HA Device Class</th>
+                            <th title='Unit of Measurement'>HA Unit</th>
+                        </tr>
                     </thead>
                     <tbody id='sensorsBody'>
                     </tbody>
@@ -463,14 +592,14 @@ $(document).ready(function() {
         <b>Discover FPP GPIOs as Binary Sensors (inputs) and Switches (outputs):</b><br>
         <div class='fppTableWrapper fppTableWrapperAsTable'>
             <div class='fppTableContents'>
-                <table id='gpiosTable'>
+                <table id='gpiosTable' class='fppSelectableRowTable'>
                     <thead>
-                        <tr>
+                        <tr class='tblheader'>
                             <th rowspan=2 title='Enable the GPIO for HA integration'>Enable</th>
                             <th rowspan=2 title='FPP GPIO Pin'>GPIO<br>Pin</th>
                             <th colspan=3>Home Assistant Device</th>
                         </tr>
-                        <tr>
+                        <tr class='tblheader'>
                             <th title='Select whether a GPIO appears as a sensor input in HA or the GPIO is used as a switch from within HA'>Type</th>
                             <th title='Device name as it appears in HA'>Name</th>
                             <th title="Sensor input class, determines which icons are displayed for the sensor's status">Class</th>
@@ -481,11 +610,8 @@ $(document).ready(function() {
                 </table>
             </div>
         </div>
-        <br>
 
-        <input type='button' class='buttons' value='Save HA Config' onClick='SaveHAConfig();'>
-        <br>
-        <br>
         NOTE: Changes to overlay models state and fill color within FPP will not be reflected within Home Assistant.  The RGB Light is currently one-way with HA controlling FPP, but not vice versa.  GPIO changes are also one-way with the direction depending on the HA Device Type selected, sensors go from FPP to HA, switches go from HA to FPP.  If a 'switch' GPIO is changed within FPP via another source, this change will not be reflected in HA.<br>
     </fieldset>
 </div>
+
