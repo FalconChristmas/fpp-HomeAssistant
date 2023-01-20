@@ -424,7 +424,7 @@ function LoadConfig() {
 
             row += "</tbody>"
                 + "<tfoot class='tfoot'>"
-                    + "<tr><td></td><td><input type='button' class='buttons' value='Add' onClick='AddLightEffect(this, \"" + fppModels[i].Name + "\");'></td></tr>"
+                    + "<tr><td colspan='2'><input type='button' class='buttons' value='Add' onClick='AddLightEffect(this, \"" + fppModels[i].Name + "\");'></td></tr>"
                     + "</tfoot>"
                 + "</table></td></tr>";
 
