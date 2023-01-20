@@ -431,7 +431,7 @@ function LoadConfig() {
             $('#modelsBody').append(row);
 
             if (hasEffectsDefined)
-                $('#modelsBody tr:last').find('.effectsHead').show();
+                $('#modelsBody > tr:last').find('.effectsHead').show();
         }
 
         $('.effects').sortable();
