@@ -10,6 +10,7 @@
 #include "commands/Commands.h"
 #include "common.h"
 #include "mqtt.h"
+#include "Events.h"
 #include "settings.h"
 #include "Plugin.h"
 #include "log.h"
@@ -80,7 +81,7 @@ public:
                 std::function<void(const std::string &, const std::string &)> lf = [this](const std::string &topic, const std::string &payload) {
                     LightMessageHandler(topic, payload);
                 };
-                mqtt->AddCallback("/ha/light/#", lf);
+                Events::AddCallback("/ha/light/#", lf);
 
                 SendLightConfigs();
 
@@ -186,12 +187,12 @@ public:
                 std::function<void(const std::string &, const std::string &)> bsf = [this](const std::string &topic, const std::string &payload) {
                     BinarySensorMessageHandler(topic, payload);
                 };
-                mqtt->AddCallback("/ha/binary_sensor/#", bsf);
+                Events::AddCallback("/ha/binary_sensor/#", bsf);
 
                 std::function<void(const std::string &, const std::string &)> sf = [this](const std::string &topic, const std::string &payload) {
                     SwitchMessageHandler(topic, payload);
                 };
-                mqtt->AddCallback("/ha/switch/#", sf);
+                Events::AddCallback("/ha/switch/#", sf);
 
                 SendGpioConfigs();
             }
@@ -224,7 +225,7 @@ public:
                 std::function<void(const std::string &, const std::string &)> sf = [this](const std::string &topic, const std::string &payload) {
                     SensorMessageHandler(topic, payload);
                 };
-                mqtt->AddCallback("/ha/sensor/#", sf);
+                Events::AddCallback("/ha/sensor/#", sf);
 
                 if (enabled) {
                     SendSensorConfigs();
@@ -232,6 +233,7 @@ public:
                     runSensorThread = true;
                     sensorThread = new std::thread([this]() {
                         std::string message;
+                        char buf[24];
                         unsigned int slept;
 
                         while (runSensorThread) {
@@ -242,7 +244,8 @@ public:
                                 if (sensors[i]["Enabled"].asInt()) {
                                     for (unsigned int f = 0; f < fppSensors["sensors"].size(); f++) {
                                         if (fppSensors["sensors"][f]["label"].asString() == sensors[i]["Label"].asString()) {
-                                            message = fppSensors["sensors"][f]["formatted"].asString();
+                                            snprintf(buf, sizeof(buf), "%.2f", fppSensors["sensors"][f]["value"].asFloat());
+                                            message = buf;
                                             mqtt->Publish(sensors[i]["Topic"].asString(), message);
                                         }
                                     }
