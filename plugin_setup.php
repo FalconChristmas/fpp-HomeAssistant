@@ -438,7 +438,7 @@ function LoadConfig() {
     });
 
     // Sensors (Temp/Voltage/etc.)
-    $.get('/fppjson.php?command=getFPPstatus', function(fppStatus) {
+    $.get('/api/system/status', function(fppStatus) {
         fppSensors = fppStatus.sensors;
 
         updateWarnings(fppStatus);
@@ -536,7 +536,6 @@ function LoadConfig() {
 
 $(document).ready(function() {
     LoadConfig();   
-    $(document).tooltip();
 });
 
 </script>
