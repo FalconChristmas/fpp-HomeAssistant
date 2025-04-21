@@ -103,7 +103,6 @@ public:
                     lock.unlock();
 
                     state["brightness"] = brightness;
-                    state["color_mode"] = "rgb";
                     state["color"] = color;
 
                     while (runLightThread) {
@@ -360,6 +359,13 @@ private:
             config["device"]["name"] = config["name"];
             config["device"]["identifiers"].append(config["unique_id"]);
             config["device"]["via_device"] = parentId;
+        }
+
+        if (component == "light") {
+            Json::Value supportedColorModes(Json::arrayValue);
+            supportedColorModes.append("rgb");
+
+            config["supported_color_modes"] = supportedColorModes;
         }
 
         if (pConfig.isMember("Effects") && pConfig["Effects"].size()) {
