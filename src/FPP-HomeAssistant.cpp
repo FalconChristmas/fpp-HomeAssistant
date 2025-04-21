@@ -439,12 +439,17 @@ private:
             std::string lightName = config["models"][modelNames[i]]["LightName"].asString();
 
             Json::Value s;
-
+            
             s["schema"] = "json";
             s["qos"] = 0;
             s["brightness"] = true;
             s["rgb"] = true;
             s["effect"] = false;
+            s["color_mode"] = true;
+            
+            Json::Value colorModes(Json::arrayValue);
+            colorModes.append("rgb");
+            s["supported_color_modes"] = colorModes;
 
             AddHomeAssistantDiscoveryConfig("light", lightName, s, config["models"][modelNames[i]]);
 
