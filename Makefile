@@ -7,7 +7,7 @@ debug: all
 
 CFLAGS+=-I.
 OBJECTS_fpp_HomeAssistant_so += src/FPP-HomeAssistant.o
-LIBS_fpp_HomeAssistant_so += -L$(SRCDIR) -lfpp -ljsoncpp -lhttpserver
+LIBS_fpp_HomeAssistant_so += -L$(SRCDIR) -lfpp -ljsoncpp -ldrogon -ltrantor
 CXXFLAGS_src/FPP-HomeAssistant.o += -I$(SRCDIR)
 
 

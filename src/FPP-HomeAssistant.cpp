@@ -19,10 +19,10 @@
 #include "sensors/Sensors.h"
 #include "util/GPIOUtils.h"
 
-class FPPHomeAssistantPlugin : public FPPPlugin, public httpserver::http_resource {
+class FPPHomeAssistantPlugin : public FPPPlugins::Plugin {
 public:
     FPPHomeAssistantPlugin()
-      : FPPPlugin("fpp-HomeAssistant"),
+            : FPPPlugins::Plugin("fpp-HomeAssistant"),
         sensorUpdateFrequency(60),
         sensorThread(nullptr),
         runSensorThread(false),
@@ -778,7 +778,7 @@ private:
 
 
 extern "C" {
-    FPPPlugin *createPlugin() {
+    FPPPlugins::Plugin *createPlugin() {
         return new FPPHomeAssistantPlugin();
     }
 }
