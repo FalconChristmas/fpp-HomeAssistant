@@ -6,6 +6,7 @@
     "homeURL": "https://github.com/FalconChristmas/fpp-HomeAssistant",
     "srcURL": "https://github.com/FalconChristmas/fpp-HomeAssistant.git",
     "bugURL": "https://github.com/FalconChristmas/fpp-HomeAssistant/issues",
+    "iconURL": "https://raw.githubusercontent.com/FalconChristmas/fpp-HomeAssistant/master/icon.png",
     "versions": [
         {
             "minFPPVersion": "4.0",
