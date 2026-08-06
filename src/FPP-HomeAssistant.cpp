@@ -13,6 +13,7 @@
 #include "Events.h"
 #include "settings.h"
 #include "Plugin.h"
+#include "FileMonitor.h"
 #include "log.h"
 #include "overlays/PixelOverlay.h"
 #include "overlays/PixelOverlayModel.h"
@@ -29,6 +30,27 @@ public:
         lightThread(nullptr),
         runLightThread(false)
     {
+        // This plugin's configuration is its own JSON file rather than the
+        // key=value settings file FPPPlugins::Plugin watches, so the
+        // monitorSettings constructor argument would not see it. Watch it
+        // directly, so editing the device configuration takes effect without
+        // restarting fppd. shutdown() gives the watch back - the callback lives
+        // in this library.
+        std::function<void()> reload = [this]() {
+            LogInfo(VB_PLUGIN, "HomeAssistant: configuration changed, reloading\n");
+            stopState();
+            applyConfiguration();
+        };
+        FileMonitor::INSTANCE.AddFile(name, FPP_DIR_CONFIG("/plugin.fpp-HomeAssistant.json"), reload);
+
+        applyConfiguration();
+    }
+
+    // Publish the discovery configs, subscribe to the command topics and start
+    // the workers, from whatever the configuration file currently says. Paired
+    // with stopState(), which undoes all of it, so the two together let a
+    // configuration change take effect without restarting fppd.
+    void applyConfiguration() {
         LogInfo(VB_PLUGIN, "Initializing Home Assistant Plugin\n");
 
         Json::Value root;
@@ -262,7 +284,20 @@ public:
             }
             LogDebug(VB_PLUGIN, "Home Assistant Init Complete\n");
         }
+    
     }
+
+    // Undo applyConfiguration(). The Events callbacks are std::functions holding
+    // this plugin's code, and the thread bodies touch members of this object, so
+    // both have to be gone before either the object or the library can be.
+    void stopState() {
+        Events::RemoveCallback("/ha/light/#");
+        Events::RemoveCallback("/ha/binary_sensor/#");
+        Events::RemoveCallback("/ha/switch/#");
+        Events::RemoveCallback("/ha/sensor/#");
+        stopThreads();
+    }
+
 
     // Withdraw the MQTT event callbacks and stop both worker threads before FPP
     // destroys this plugin. Every one of these is this plugin's code: the
@@ -272,11 +307,8 @@ public:
     // The sensor thread checks its flag once a second, so the join can take
     // about that long; it is bounded, so no readiness predicate is needed.
     virtual std::function<bool()> shutdown() override {
-        Events::RemoveCallback("/ha/light/#");
-        Events::RemoveCallback("/ha/binary_sensor/#");
-        Events::RemoveCallback("/ha/switch/#");
-        Events::RemoveCallback("/ha/sensor/#");
-        stopThreads();
+        FileMonitor::INSTANCE.RemoveFile(name, FPP_DIR_CONFIG("/plugin.fpp-HomeAssistant.json"));
+        stopState();
         // This plugin raised these, so it takes them back rather than leaving
         // stale warnings on the UI for a plugin that is no longer loaded.
         WarningHolder::RemoveWarning("MQTT Is Not Configured, cannot configure Home Assistant Plugin");
