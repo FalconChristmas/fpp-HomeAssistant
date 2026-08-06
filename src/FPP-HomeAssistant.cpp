@@ -264,16 +264,47 @@ public:
         }
     }
 
+    // Withdraw the MQTT event callbacks and stop both worker threads before FPP
+    // destroys this plugin. Every one of these is this plugin's code: the
+    // callbacks are std::functions held by FPP's Events registry, and the thread
+    // bodies touch members of this object, so a destructor is too late - and
+    // both have to be finished before the library they live in can be unmapped.
+    // The sensor thread checks its flag once a second, so the join can take
+    // about that long; it is bounded, so no readiness predicate is needed.
+    virtual std::function<bool()> shutdown() override {
+        Events::RemoveCallback("/ha/light/#");
+        Events::RemoveCallback("/ha/binary_sensor/#");
+        Events::RemoveCallback("/ha/switch/#");
+        Events::RemoveCallback("/ha/sensor/#");
+        stopThreads();
+        // This plugin raised these, so it takes them back rather than leaving
+        // stale warnings on the UI for a plugin that is no longer loaded.
+        WarningHolder::RemoveWarning("MQTT Is Not Configured, cannot configure Home Assistant Plugin");
+        WarningHolder::RemoveWarning("MQTT Is Not Connected, cannot configure Home Assistant Plugin");
+        return nullptr;
+    }
+
     virtual ~FPPHomeAssistantPlugin() {
-        if (runSensorThread) {
+        stopThreads(); // no-op if shutdown() already ran
+    }
+
+private:
+    // Idempotent, so shutdown() and the destructor can both call it.
+    void stopThreads() {
+        if (sensorThread) {
             runSensorThread = false;
             sensorThread->join();
+            delete sensorThread;
+            sensorThread = nullptr;
         }
-        if (runLightThread) {
+        if (lightThread) {
             runLightThread = false;
             lightThread->join();
+            delete lightThread;
+            lightThread = nullptr;
         }
     }
+public:
 
 private:
     Json::Value overlayModelConfig;
@@ -286,12 +317,14 @@ private:
     Json::Value cache;
     std::mutex  cacheLock;
 
-    int               sensorUpdateFrequency;
+    int               sensorUpdateFrequency = 0;
     Json::Value       sensors;
-    std::thread      *sensorThread;
-    std::atomic_bool  runSensorThread;
-    std::thread      *lightThread;
-    std::atomic_bool  runLightThread;
+    // Both were uninitialised; stopThreads() keys on the pointer so that a
+    // constructor which returned early (no MQTT) leaves nothing to join.
+    std::thread      *sensorThread = nullptr;
+    std::atomic_bool  runSensorThread{false};
+    std::thread      *lightThread = nullptr;
+    std::atomic_bool  runLightThread{false};
 
     /////////////////////////////////////////////////////////////////////////
     // Functions supporting discovery
@@ -776,6 +809,14 @@ private:
 
 };
 
+
+// Safe to dlclose() on unload: the only threads are the sensor and light
+// workers, and shutdown() stops and joins both. No timers, no CurlManager
+// requests, no epoll descriptors, no commands and no HTTP routes. The four
+// Events callbacks - std::functions whose code lives here - are withdrawn in
+// shutdown(); MQTT itself is FPP's and is only published to, never subscribed
+// to directly.
+FPP_PLUGIN_SUPPORTS_UNLOAD()
 
 extern "C" {
     FPPPlugins::Plugin *createPlugin() {
