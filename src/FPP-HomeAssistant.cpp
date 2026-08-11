@@ -46,6 +46,61 @@ public:
         applyConfiguration();
     }
 
+    // "models", "gpios" and "sensors" are name-keyed maps, and every read of
+    // them here goes through getMemberNames(), which throws Json::LogicError on
+    // anything that is not an object or null. Nothing in this plugin or in fppd
+    // catches that, so the throw reaches std::terminate and the daemon aborts
+    // during plugin init -- on every boot, since the file is still bad.
+    //
+    // They do arrive as something else: the device this was reported from had
+    // "sensors": [] with "models" and "gpios" both proper objects, i.e. the one
+    // map it had no entries for was an empty array.
+    //
+    // What wrote it is NOT known. The setup page has emitted {} for all three
+    // since 2020 and posts its own JSON.stringify output, and FPP's backup
+    // restores plugin config files by imploding stored lines rather than
+    // re-encoding them, so neither is the source. Worth knowing while looking:
+    // an empty JSON object and an empty array are the same value in PHP, so any
+    // tool that round-trips this file through json_decode($s, true) +
+    // json_encode() rewrites {} as [] (checked against php directly). Some
+    // external tooling doing that is the leading guess, not a finding.
+    //
+    // The abort is worth fixing whatever wrote the file, so this does not wait
+    // on that answer.
+    //
+    // Fix the shape once, here, where the file is read, rather than guarding the
+    // seven getMemberNames() call sites downstream -- this is also the reload
+    // path, so a restore that rewrites the file while fppd is up lands here too.
+    void normalizeConfig() {
+        if (!config.isObject()) {
+            LogErr(VB_PLUGIN, "plugin.fpp-HomeAssistant.json is not a JSON object, ignoring it\n");
+            WarningHolder::AddWarning("Home Assistant plugin: plugin.fpp-HomeAssistant.json is not a JSON object and was ignored");
+            config = Json::Value(Json::objectValue);
+            return;
+        }
+
+        for (const char* key : { "models", "gpios", "sensors" }) {
+            if (!config.isMember(key) || config[key].isObject() || config[key].isNull()) {
+                continue;
+            }
+
+            // An empty array is the lossy-round-trip case above and holds no
+            // configuration, so quietly using an empty map loses nothing.
+            // Anything else means entries we cannot read, and starting up with
+            // them silently missing looks like the plugin forgot them, so that
+            // one gets a warning the user will actually see.
+            bool hadEntries = config[key].size() > 0;
+            LogWarn(VB_PLUGIN, "'%s' in plugin.fpp-HomeAssistant.json is %s, not an object; ignoring it\n",
+                    key, config[key].isArray() ? "an array" : "a scalar");
+            config[key] = Json::Value(Json::objectValue);
+
+            if (hadEntries) {
+                WarningHolder::AddWarning(std::string("Home Assistant plugin: '") + key +
+                                          "' in plugin.fpp-HomeAssistant.json is not an object and was ignored - re-save the plugin configuration page");
+            }
+        }
+    }
+
     // Publish the discovery configs, subscribe to the command topics and start
     // the workers, from whatever the configuration file currently says. Paired
     // with stopState(), which undoes all of it, so the two together let a
@@ -72,6 +127,8 @@ public:
         }
 
         if (LoadJsonFromFile(FPP_DIR_CONFIG("/plugin.fpp-HomeAssistant.json"), config)) {
+            normalizeConfig();
+
             if (mqtt == nullptr) {
                 LogErr(VB_PLUGIN, "MQTT Is Not Configured, cannot configure Home Assistant Plugin\n");
                 WarningHolder::AddWarning("MQTT Is Not Configured, cannot configure Home Assistant Plugin");
