@@ -8,6 +8,7 @@
 #include <thread>
 
 #include "commands/Commands.h"
+#include "fppversion.h"
 #include "common.h"
 #include "mqtt.h"
 #include "Events.h"
