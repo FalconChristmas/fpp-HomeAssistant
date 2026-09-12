@@ -40,5 +40,32 @@
             "sha": "",
             "allowUpdates": 1
         }
-    ]
+    ],
+    "privacy": {
+        "summary": "Once you pick which lights, readings, buttons or switches to share, it tells your Home Assistant about them through the MQTT server FPP is already set up to use, and lets Home Assistant control them.",
+        "sends": [
+            {
+                "to": "the MQTT server set up in FPP's own settings",
+                "what": "player name and FPP version, light colours, temperature/voltage readings, button or sensor on/off",
+                "why": "so Home Assistant can find the player, show what it is doing and send it commands",
+                "alwaysOn": false
+            }
+        ],
+        "collects": [],
+        "sensors": [
+            {
+                "type": "gpio-input",
+                "stored": false
+            }
+        ],
+        "remoteAccess": "none",
+        "systemChanges": [
+            {
+                "kind": "core-settings",
+                "what": "changes the player's own button and sensor input settings, replacing any action already set on a pin you share"
+            }
+        ],
+        "closedCode": false,
+        "other": "Nothing is kept on the player. If the MQTT server is hosted online, what it sends sits on that company's server. What it told the server, and the changed input settings, stay behind after you disable or remove the plugin; clear them by hand."
+    }
 }
