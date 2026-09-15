@@ -52,7 +52,12 @@
             }
         ],
         "collects": [],
-        "sensors": [],
+        "sensors": [
+            {
+                "type": "gpio-input",
+                "stored": false
+            }
+        ],
         "remoteAccess": "none",
         "systemChanges": [
             {
